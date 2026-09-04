@@ -241,6 +241,18 @@
   </div>
 
   <div class="field">
+    <label>Attach an image</label>
+    <label class="file-btn" for="imageInput">Choose an image</label>
+    <input type="file" id="imageInput" accept="image/*">
+    <div id="imageName">No image attached</div>
+    <div class="range-row" style="margin-top:8px;"><span>size</span><span id="imageSizeVal">0.50</span></div>
+    <input type="range" id="imageSizeRange" min="0.05" max="2" step="0.01" value="0.5">
+    <div class="btn-row" style="margin-top:6px;">
+      <button class="small-btn" id="removeImageBtn">Remove image</button>
+    </div>
+  </div>
+
+  <div class="field">
     <label>Scale</label>
     <input type="range" id="scaleRange" min="0.001" max="0.5" step="0.001" value="0.05">
     <div class="range-row"><span>small</span><span id="scaleVal">0.050</span><span>large</span></div>
@@ -297,8 +309,11 @@
   <a-assets></a-assets>
 
   <a-marker id="marker" preset="hiro" emitevents="true">
-    <a-entity id="modelSlot" position="0 0 0" rotation="-90 0 0" scale="0.05 0.05 0.05">
-      <a-box id="defaultBox" position="0 0.5 0" color="#4FE08F" depth="1" height="1" width="1"></a-box>
+    <a-entity id="contentSlot">
+      <a-entity id="modelSlot" position="0 0 0" rotation="-90 0 0" scale="0.05 0.05 0.05">
+        <a-box id="defaultBox" position="0 0.5 0" color="#4FE08F" depth="1" height="1" width="1"></a-box>
+      </a-entity>
+      <a-image id="imagePlane" position="0 0.01 0" rotation="-90 0 0" width="0.5" height="0.5" visible="false"></a-image>
     </a-entity>
   </a-marker>
 
@@ -308,7 +323,14 @@
 <script>
   var statusEl = document.getElementById('status');
   var markerEl = document.getElementById('marker');
+  var contentSlot = document.getElementById('contentSlot');
   var modelSlot = document.getElementById('modelSlot');
+  var imagePlane = document.getElementById('imagePlane');
+  var imageInput = document.getElementById('imageInput');
+  var imageNameEl = document.getElementById('imageName');
+  var imageSizeRange = document.getElementById('imageSizeRange');
+  var imageSizeVal = document.getElementById('imageSizeVal');
+  var removeImageBtn = document.getElementById('removeImageBtn');
   var defaultBox = document.getElementById('defaultBox');
   var fileInput = document.getElementById('fileInput');
   var fileNameEl = document.getElementById('fileName');
@@ -345,7 +367,7 @@
     Object.keys(attrs).forEach(function (k) {
       newMarker.setAttribute(k, attrs[k]);
     });
-    newMarker.appendChild(modelSlot);
+    newMarker.appendChild(contentSlot);
     markerEl.parentNode.replaceChild(newMarker, markerEl);
     markerEl = newMarker;
     bindMarkerEvents();
@@ -402,6 +424,40 @@
     modelSlot.appendChild(gltfEntity);
 
     applySpin(spinToggle.checked);
+  });
+
+  imageInput.addEventListener('change', function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+
+    imageNameEl.textContent = file.name;
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function () {
+      var aspect = img.naturalHeight / img.naturalWidth;
+      var w = parseFloat(imageSizeRange.value);
+      imagePlane.setAttribute('width', w);
+      imagePlane.setAttribute('height', w * aspect);
+      imagePlane.setAttribute('src', url);
+      imagePlane.setAttribute('visible', 'true');
+      imagePlane.dataset.aspect = aspect;
+    };
+    img.src = url;
+  });
+
+  imageSizeRange.addEventListener('input', function (e) {
+    var w = parseFloat(e.target.value);
+    imageSizeVal.textContent = w.toFixed(2);
+    var aspect = parseFloat(imagePlane.dataset.aspect || '1');
+    imagePlane.setAttribute('width', w);
+    imagePlane.setAttribute('height', w * aspect);
+  });
+
+  removeImageBtn.addEventListener('click', function () {
+    imagePlane.setAttribute('visible', 'false');
+    imagePlane.removeAttribute('src');
+    imageNameEl.textContent = 'No image attached';
+    imageInput.value = '';
   });
 
   camStartBtn.addEventListener('click', function () {
