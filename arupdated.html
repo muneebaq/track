@@ -484,6 +484,7 @@
   var trackMarkerBtn = document.getElementById('trackMarkerBtn');
   var useHiroBtn = document.getElementById('useHiroBtn');
   var pattInput = document.getElementById('pattInput');
+  var sceneEl = document.getElementById('scene');
 
   var MARKER_SIZE = 512;
   var BORDER = MARKER_SIZE * 0.25; // outer black border -> inner 50% is the trainable image
@@ -510,8 +511,7 @@
       correctLevel: QRCode.CorrectLevel.H
     });
 
-    // qrcode.js renders asynchronously into a <canvas> or <img>; wait a tick
-    setTimeout(function () {
+    function finishQrMarker() {
       var qrCanvas = qrHost.querySelector('canvas');
       var innerCtx = innerCanvas.getContext('2d');
       innerCtx.fillStyle = '#FFFFFF';
@@ -520,6 +520,10 @@
         innerCtx.drawImage(qrCanvas, 0, 0, INNER, INNER);
       } else {
         var qrImg = qrHost.querySelector('img');
+        if (!qrImg || !qrImg.complete || !qrImg.naturalWidth) {
+          setTimeout(finishQrMarker, 50);
+          return;
+        }
         innerCtx.drawImage(qrImg, 0, 0, INNER, INNER);
       }
 
@@ -534,7 +538,8 @@
       printLink.download = 'qr-marker.png';
       markerPreviewWrap.classList.add('show');
       if (trackWhenReady) trackQrMarker();
-    }, 50);
+    }
+    finishQrMarker();
   }
   genQrBtn.addEventListener('click', function () {
     generateQrMarker(false);
@@ -613,9 +618,14 @@
     replaceMarker({ preset: 'hiro' });
   });
 
-  document.getElementById('scene').addEventListener('loaded', function () {
+  function initializeQrMarker() {
     generateQrMarker(true);
-  });
+  }
+  if (sceneEl.hasLoaded) {
+    initializeQrMarker();
+  } else {
+    sceneEl.addEventListener('loaded', initializeQrMarker, { once: true });
+  }
 
 </script>
 
