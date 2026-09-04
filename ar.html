@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>markerAR — browser AR viewer</title>
+<meta name="description" content="Upload a .glb model and view it anchored to a printed marker, live, right in your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.js"></script>
+<style>
+  :root {
+    --panel: #141B17;
+    --line: #283029;
+    --line-strong: #3A453D;
+    --text: #E9ECE7;
+    --text-dim: #8FA097;
+    --text-faint: #5C6A61;
+    --green: #4FE08F;
+    --amber: #F5B942;
+    --danger: #E2635A;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Archivo', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: var(--sans); }
+  a-scene { position: fixed; inset: 0; }
+
+  #panel {
+    position: fixed;
+    top: 16px; left: 16px;
+    width: 280px;
+    background: rgba(20, 27, 23, 0.92);
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    padding: 16px;
+    color: var(--text);
+    z-index: 999;
+    backdrop-filter: blur(4px);
+  }
+  #panel h1 {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  #panel h1 span { color: var(--green); }
+  #panel .sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin: 0 0 16px;
+    line-height: 1.5;
+  }
+
+  .field { margin-bottom: 14px; }
+  .field label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .file-btn {
+    display: block;
+    width: 100%;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    padding: 10px;
+    border: 1px dashed var(--line-strong);
+    border-radius: 4px;
+    color: var(--text);
+    cursor: pointer;
+    background: transparent;
+  }
+  .file-btn:hover { border-color: var(--green); color: var(--green); }
+  #fileInput { display: none; }
+  #fileName {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 6px;
+    word-break: break-all;
+  }
+
+  input[type="range"] { width: 100%; accent-color: var(--green); }
+  .range-row {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  #printLink {
+    display: block;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--green);
+    text-decoration: none;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    padding: 9px;
+    margin-top: 4px;
+  }
+  #printLink:hover { border-color: var(--green); }
+
+  #status {
+    position: fixed;
+    left: 16px; bottom: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 8px 14px;
+    border-radius: 4px;
+    background: rgba(20, 27, 23, 0.92);
+    border: 1px solid var(--line-strong);
+    z-index: 999;
+  }
+  #status.found { color: var(--green); border-color: var(--green); }
+  #status.lost { color: var(--text-faint); }
+
+  #camPrompt {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0A0E0C;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    text-align: center;
+    padding: 24px;
+    z-index: 1000;
+  }
+  #camPrompt.hidden { display: none; }
+  #camPrompt .box { max-width: 320px; }
+  #camPrompt button {
+    margin-top: 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 10px 20px;
+    background: var(--green);
+    color: #072316;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<div id="camPrompt">
+  <div class="box">
+    <p>markerAR needs camera access to track the printed marker.</p>
+    <button id="camStartBtn">Enable camera</button>
+  </div>
+</div>
+
+<div id="panel">
+  <h1>marker<span>AR</span></h1>
+  <p class="sub">Upload a .glb model, print the marker below, then point your camera at it.</p>
+
+  <div class="field">
+    <label>Model file</label>
+    <label class="file-btn" for="fileInput">Choose a .glb file</label>
+    <input type="file" id="fileInput" accept=".glb,.gltf">
+    <div id="fileName">No file selected — showing default cube</div>
+  </div>
+
+  <div class="field">
+    <label>Scale</label>
+    <input type="range" id="scaleRange" min="0.001" max="0.5" step="0.001" value="0.05">
+    <div class="range-row"><span>small</span><span id="scaleVal">0.050</span><span>large</span></div>
+  </div>
+
+  <div class="field toggle-row">
+    <input type="checkbox" id="spinToggle" checked>
+    <label for="spinToggle" style="margin:0;">Idle rotation</label>
+  </div>
+
+  <div class="field">
+    <a id="printLink" href="https://raw.githubusercontent.com/AR-js-org/AR.js/master/data/images/hiro.png" target="_blank" rel="noopener">Open marker image to print</a>
+  </div>
+</div>
+
+<div id="status" class="lost">No marker detected</div>
+
+<a-scene
+  id="scene"
+  embedded
+  vr-mode-ui="enabled: false"
+  renderer="logarithmicDepthBuffer: true;"
+  arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix;">
+
+  <a-assets></a-assets>
+
+  <a-marker id="marker" preset="hiro" emitevents="true">
+    <a-entity id="modelSlot" position="0 0 0" rotation="-90 0 0" scale="0.05 0.05 0.05">
+      <a-box id="defaultBox" position="0 0.5 0" color="#4FE08F" depth="1" height="1" width="1"></a-box>
+    </a-entity>
+  </a-marker>
+
+  <a-entity camera></a-entity>
+</a-scene>
+
+<script>
+  var statusEl = document.getElementById('status');
+  var markerEl = document.getElementById('marker');
+  var modelSlot = document.getElementById('modelSlot');
+  var defaultBox = document.getElementById('defaultBox');
+  var fileInput = document.getElementById('fileInput');
+  var fileNameEl = document.getElementById('fileName');
+  var scaleRange = document.getElementById('scaleRange');
+  var scaleVal = document.getElementById('scaleVal');
+  var spinToggle = document.getElementById('spinToggle');
+  var camPrompt = document.getElementById('camPrompt');
+  var camStartBtn = document.getElementById('camStartBtn');
+
+  markerEl.addEventListener('markerFound', function () {
+    statusEl.textContent = 'Marker found';
+    statusEl.className = 'found';
+  });
+  markerEl.addEventListener('markerLost', function () {
+    statusEl.textContent = 'No marker detected';
+    statusEl.className = 'lost';
+  });
+
+  function applyScale(v) {
+    modelSlot.setAttribute('scale', v + ' ' + v + ' ' + v);
+    scaleVal.textContent = parseFloat(v).toFixed(3);
+  }
+  scaleRange.addEventListener('input', function (e) {
+    applyScale(e.target.value);
+  });
+
+  function applySpin(on) {
+    if (on) {
+      modelSlot.setAttribute('animation', {
+        property: 'rotation',
+        to: '-90 360 0',
+        loop: true,
+        dur: 6000,
+        easing: 'linear'
+      });
+    } else {
+      modelSlot.removeAttribute('animation');
+      modelSlot.setAttribute('rotation', '-90 0 0');
+    }
+  }
+  spinToggle.addEventListener('change', function (e) {
+    applySpin(e.target.checked);
+  });
+  applySpin(true);
+
+  fileInput.addEventListener('change', function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+
+    fileNameEl.textContent = file.name;
+    var url = URL.createObjectURL(file);
+
+    if (defaultBox) {
+      defaultBox.parentNode.removeChild(defaultBox);
+      defaultBox = null;
+    }
+
+    var existing = document.getElementById('gltfEntity');
+    if (existing) existing.parentNode.removeChild(existing);
+
+    var gltfEntity = document.createElement('a-entity');
+    gltfEntity.setAttribute('id', 'gltfEntity');
+    gltfEntity.setAttribute('gltf-model', url);
+    gltfEntity.setAttribute('position', '0 0 0');
+    modelSlot.appendChild(gltfEntity);
+
+    applySpin(spinToggle.checked);
+  });
+
+  camStartBtn.addEventListener('click', function () {
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(function (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        camPrompt.classList.add('hidden');
+      })
+      .catch(function (err) {
+        camPrompt.querySelector('.box').innerHTML =
+          '<p>Camera access was blocked. Check your browser\'s site permissions and reload the page.</p>';
+      });
+  });
+</script>
+
+</body>
+</html>

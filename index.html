@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>markerAR — track any 3D model in the real world</title>
+<meta name="description" content="markerAR tracks a printed ArUco marker with OpenCV and renders any glTF, GLB, or OBJ model on top of it in real time, in Python.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0E1210;
+    --panel: #141B17;
+    --panel-2: #171F1A;
+    --line: #283029;
+    --line-strong: #3A453D;
+    --text: #E9ECE7;
+    --text-dim: #8FA097;
+    --text-faint: #5C6A61;
+    --green: #4FE08F;
+    --green-dim: #2E7A54;
+    --amber: #F5B942;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Archivo', sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--green); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 32px;
+  }
+
+  .prose {
+    max-width: 640px;
+  }
+
+  /* ---------- nav ---------- */
+  nav {
+    border-bottom: 1px solid var(--line);
+  }
+  nav .wrap {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+  .logo {
+    font-family: var(--mono);
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .logo span { color: var(--green); }
+  .nav-link {
+    font-family: var(--mono);
+    font-size: 13px;
+    text-decoration: none;
+    color: var(--text-dim);
+    border: 1px solid var(--line-strong);
+    padding: 8px 14px;
+    border-radius: 4px;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+  .nav-link:hover { color: var(--text); border-color: var(--green-dim); }
+
+  /* ---------- hero ---------- */
+  .hero {
+    padding: 88px 0 96px;
+    border-bottom: 1px solid var(--line);
+  }
+  .hero .wrap {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 56px;
+    align-items: center;
+  }
+  h1 {
+    font-size: 40px;
+    font-weight: 700;
+    line-height: 1.15;
+    margin: 0 0 22px;
+    letter-spacing: -0.01em;
+  }
+  .hero p.lead {
+    font-size: 17px;
+    color: var(--text-dim);
+    margin: 0 0 32px;
+    max-width: 46ch;
+  }
+  .cta-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn {
+    font-family: var(--mono);
+    font-size: 13.5px;
+    text-decoration: none;
+    padding: 12px 20px;
+    border-radius: 4px;
+    display: inline-block;
+    border: 1px solid transparent;
+  }
+  .btn-primary { background: var(--green); color: #072316; font-weight: 600; }
+  .btn-primary:hover { background: #6BE8A6; }
+  .btn-secondary { border-color: var(--line-strong); color: var(--text); }
+  .btn-secondary:hover { border-color: var(--green-dim); }
+
+  /* ---------- viewfinder mock ---------- */
+  .viewfinder {
+    position: relative;
+    aspect-ratio: 4 / 3;
+    background: #0A0E0C;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .vf-bracket {
+    position: absolute;
+    width: 26px;
+    height: 26px;
+    border: 2px solid var(--text-faint);
+  }
+  .vf-tl { top: 14px; left: 14px; border-right: none; border-bottom: none; }
+  .vf-tr { top: 14px; right: 14px; border-left: none; border-bottom: none; }
+  .vf-bl { bottom: 14px; left: 14px; border-right: none; border-top: none; }
+  .vf-br { bottom: 14px; right: 14px; border-left: none; border-top: none; }
+
+  .vf-marker-wrap {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .vf-ring {
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 128px; height: 128px;
+    margin: -64px 0 0 -64px;
+    border: 2px solid var(--amber);
+    border-radius: 50%;
+    opacity: 0.85;
+    animation: pulse 2.2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%   { transform: scale(0.78); opacity: 0.9; }
+    60%  { transform: scale(1.05); opacity: 0.25; }
+    100% { transform: scale(0.78); opacity: 0.9; }
+  }
+  .vf-marker {
+    position: relative;
+    width: 84px;
+    height: 84px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: repeat(4, 1fr);
+    border: 5px solid #EDEFEA;
+    background: #EDEFEA;
+  }
+  .vf-marker div { background: #0A0E0C; }
+  .vf-marker div.on { background: #EDEFEA; }
+
+  .vf-telemetry {
+    position: absolute;
+    left: 14px; bottom: 14px;
+    right: 14px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--green);
+    display: flex;
+    justify-content: space-between;
+    padding-bottom: 2px;
+  }
+  .vf-telemetry .dim { color: var(--text-faint); }
+
+  /* ---------- sections ---------- */
+  section { padding: 72px 0; border-bottom: 1px solid var(--line); }
+  section:last-of-type { border-bottom: none; }
+  h2 {
+    font-size: 24px;
+    font-weight: 600;
+    margin: 0 0 12px;
+    letter-spacing: -0.01em;
+  }
+  .section-intro {
+    color: var(--text-dim);
+    max-width: 56ch;
+    margin: 0 0 40px;
+  }
+
+  /* ---------- feature grid ---------- */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+  .feature {
+    background: var(--panel);
+    padding: 28px 26px;
+  }
+  .feature .glyph {
+    font-family: var(--mono);
+    color: var(--green);
+    font-size: 13px;
+    margin-bottom: 14px;
+  }
+  .feature h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+  .feature p {
+    font-size: 14px;
+    color: var(--text-dim);
+    margin: 0;
+  }
+
+  /* ---------- pipeline (how it works) ---------- */
+  .pipeline {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+  }
+  .step {
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    padding: 20px 18px;
+    background: var(--panel);
+  }
+  .step .num {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--amber);
+    margin-bottom: 12px;
+  }
+  .step h3 { font-size: 15px; font-weight: 600; margin: 0 0 6px; }
+  .step p { font-size: 13.5px; color: var(--text-dim); margin: 0; }
+
+  /* ---------- code ---------- */
+  .code-block {
+    background: #0A0E0C;
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    padding: 18px 20px;
+    font-family: var(--mono);
+    font-size: 13.5px;
+    overflow-x: auto;
+    margin: 0 0 20px;
+  }
+  .code-block .comment { color: var(--text-faint); }
+  .code-block .cmd { color: var(--text); }
+  .code-block .cmd .flag { color: var(--green); }
+
+  /* ---------- formats / troubleshooting ---------- */
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+  }
+  dl.formats { margin: 0; }
+  dl.formats dt {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--green);
+    margin-top: 18px;
+  }
+  dl.formats dt:first-child { margin-top: 0; }
+  dl.formats dd {
+    margin: 4px 0 0;
+    font-size: 14px;
+    color: var(--text-dim);
+  }
+  ul.tips { margin: 0; padding: 0; list-style: none; }
+  ul.tips li {
+    font-size: 14px;
+    color: var(--text-dim);
+    padding: 10px 0;
+    border-top: 1px solid var(--line);
+  }
+  ul.tips li:first-child { border-top: none; padding-top: 0; }
+  ul.tips code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--text);
+    background: var(--panel-2);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  /* ---------- footer ---------- */
+  footer { padding: 40px 0 60px; }
+  footer .wrap {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--text-faint);
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  footer a { color: var(--text-dim); }
+
+  @media (max-width: 860px) {
+    .hero .wrap { grid-template-columns: 1fr; }
+    .feature-grid { grid-template-columns: 1fr; }
+    .pipeline { grid-template-columns: 1fr 1fr; }
+    .two-col { grid-template-columns: 1fr; }
+    h1 { font-size: 32px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .vf-ring { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="logo">marker<span>AR</span></div>
+    <div style="display:flex; gap:10px;">
+      <a class="nav-link" href="ar.html">Try in browser</a>
+      <a class="nav-link" href="https://github.com/YOUR-USERNAME/marker-ar-viewer" target="_blank" rel="noopener">View on GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div>
+      <h1>Point a camera at a printed square.<br>Watch a model appear.</h1>
+      <p class="lead">markerAR tracks a printed marker with OpenCV and renders your own 3D model on top of it in real time — no phone, no browser, no WebXR. Just Python and a webcam.</p>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="ar.html">Try it in your browser</a>
+        <a class="btn btn-secondary" href="https://github.com/YOUR-USERNAME/marker-ar-viewer" target="_blank" rel="noopener">View source</a>
+        <a class="btn btn-secondary" href="#install">Read the setup guide</a>
+      </div>
+    </div>
+    <div class="viewfinder" role="img" aria-label="Illustration of a camera viewfinder detecting a printed marker, with a pulsing ring and status readout">
+      <div class="vf-bracket vf-tl"></div>
+      <div class="vf-bracket vf-tr"></div>
+      <div class="vf-bracket vf-bl"></div>
+      <div class="vf-bracket vf-br"></div>
+      <div class="vf-marker-wrap">
+        <div class="vf-ring"></div>
+        <div class="vf-marker" id="markerGrid"></div>
+      </div>
+      <div class="vf-telemetry">
+        <span>MARKER 0 <span class="dim">|</span> POSE OK</span>
+        <span id="fpsReadout">29.7 FPS</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="features">
+  <div class="wrap">
+    <h2>What it does</h2>
+    <p class="section-intro">A small Python tool that turns a printed square of paper into an anchor for any 3D model you already have.</p>
+    <div class="feature-grid">
+      <div class="feature">
+        <div class="glyph">.glb / .gltf / .obj</div>
+        <h3>Any model you already have</h3>
+        <p>Point <code>--model</code> at a file and go — no format conversion needed for glTF, GLB, or OBJ+MTL.</p>
+      </div>
+      <div class="feature">
+        <div class="glyph">solvePnP</div>
+        <h3>Precise pose tracking</h3>
+        <p>OpenCV's ArUco detector plus solvePnP anchor the render to the marker's exact position and angle, frame by frame.</p>
+      </div>
+      <div class="feature">
+        <div class="glyph">--rotate-speed</div>
+        <h3>Built-in motion</h3>
+        <p>Idle rotation, a gentle float, and a pulsing marker ring — all tunable from the command line.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="how-it-works">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="section-intro">Every frame runs the same four-step pipeline, entirely on your machine.</p>
+    <div class="pipeline">
+      <div class="step">
+        <div class="num">01</div>
+        <h3>Detect</h3>
+        <p>The webcam frame is scanned for the printed marker.</p>
+      </div>
+      <div class="step">
+        <div class="num">02</div>
+        <h3>Solve</h3>
+        <p>solvePnP recovers the marker's position and orientation.</p>
+      </div>
+      <div class="step">
+        <div class="num">03</div>
+        <h3>Render</h3>
+        <p>The 3D model is drawn from that exact camera viewpoint.</p>
+      </div>
+      <div class="step">
+        <div class="num">04</div>
+        <h3>Composite</h3>
+        <p>The render is blended back into the live video frame.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="install">
+  <div class="wrap">
+    <h2>Install</h2>
+    <p class="section-intro">Python 3.10 or 3.11 is recommended — <code>pyrender</code>'s OpenGL bindings are unreliable on newer interpreters.</p>
+    <div class="code-block"><span class="cmd">pip install opencv-contrib-python pyrender trimesh "numpy&lt;2" requests PyOpenGL</span></div>
+  </div>
+</section>
+
+<section id="usage">
+  <div class="wrap">
+    <h2>Run it</h2>
+    <p class="section-intro">Print a marker once, then track any model against it.</p>
+    <div class="code-block"><span class="comment"># 1. Generate and print a tracking marker</span><br><span class="cmd">python marker_ar_viewer.py <span class="flag">--make-marker</span> marker.png</span></div>
+    <div class="code-block"><span class="comment"># 2. Track your own model</span><br><span class="cmd">python marker_ar_viewer.py <span class="flag">--model</span> bee.glb <span class="flag">--model-scale</span> 0.02</span></div>
+    <div class="code-block"><span class="comment"># Windows webcam giving MSMF errors?</span><br><span class="cmd">python marker_ar_viewer.py <span class="flag">--model</span> bee.glb <span class="flag">--backend</span> dshow</span></div>
+  </div>
+</section>
+
+<section id="formats">
+  <div class="wrap">
+    <div class="two-col">
+      <div>
+        <h2>Model formats</h2>
+        <dl class="formats">
+          <dt>.glb / .gltf</dt>
+          <dd>Loads directly, no conversion needed.</dd>
+          <dt>.obj + .mtl</dt>
+          <dd>Loads directly — keep both files in the same folder.</dd>
+          <dt>.fbx</dt>
+          <dd>Convert once with the included Blender script, then load the resulting .glb like any other model.</dd>
+        </dl>
+      </div>
+      <div>
+        <h2>If nothing renders</h2>
+        <ul class="tips">
+          <li>Check the console for the printed bounding-box size and suggested <code>--model-scale</code> at startup.</li>
+          <li>Confirm the on-screen text reads a detected marker ID, not "No markers detected".</li>
+          <li>Make sure the marker's real-world size matches <code>--marker-size</code>, in meters.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span>MIT licensed. Built with OpenCV, pyrender, and trimesh.</span>
+    <a href="https://github.com/YOUR-USERNAME/marker-ar-viewer" target="_blank" rel="noopener">github.com/YOUR-USERNAME/marker-ar-viewer</a>
+  </div>
+</footer>
+
+<script>
+  var grid = document.getElementById('markerGrid');
+  var pattern = [1,0,1,1, 0,1,0,1, 1,1,0,0, 0,1,1,0];
+  pattern.forEach(function(v) {
+    var cell = document.createElement('div');
+    if (v) cell.className = 'on';
+    grid.appendChild(cell);
+  });
+
+  var fpsEl = document.getElementById('fpsReadout');
+  setInterval(function() {
+    var fps = (28 + Math.random() * 3).toFixed(1);
+    fpsEl.textContent = fps + ' FPS';
+  }, 900);
+</script>
+
+</body>
+</html>
