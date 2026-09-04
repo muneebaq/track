@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>markerAR — browser AR viewer</title>
+<meta name="description" content="Upload a .glb model and view it anchored to a printed marker, live, right in your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root {
+    --panel: #141B17;
+    --line: #283029;
+    --line-strong: #3A453D;
+    --text: #E9ECE7;
+    --text-dim: #8FA097;
+    --text-faint: #5C6A61;
+    --green: #4FE08F;
+    --amber: #F5B942;
+    --danger: #E2635A;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Archivo', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: var(--sans); }
+  a-scene { position: fixed; inset: 0; }
+
+  #panel {
+    position: fixed;
+    top: 16px; left: 16px;
+    width: 280px;
+    background: rgba(20, 27, 23, 0.92);
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    padding: 16px;
+    color: var(--text);
+    z-index: 999;
+    backdrop-filter: blur(4px);
+  }
+  #panel h1 {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  #panel h1 span { color: var(--green); }
+  #panel .sub {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin: 0 0 16px;
+    line-height: 1.5;
+  }
+
+  .field { margin-bottom: 14px; }
+  .field label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .file-btn {
+    display: block;
+    width: 100%;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    padding: 10px;
+    border: 1px dashed var(--line-strong);
+    border-radius: 4px;
+    color: var(--text);
+    cursor: pointer;
+    background: transparent;
+  }
+  .file-btn:hover { border-color: var(--green); color: var(--green); }
+  #fileInput { display: none; }
+  #fileName {
+    font-size: 11px;
+    color: var(--text-faint);
+    margin-top: 6px;
+    word-break: break-all;
+  }
+
+  input[type="range"] { width: 100%; accent-color: var(--green); }
+  .range-row {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  #printLink {
+    display: block;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--green);
+    text-decoration: none;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    padding: 9px;
+    margin-top: 4px;
+  }
+  #printLink:hover { border-color: var(--green); }
+
+  .section-divider {
+    border-top: 1px solid var(--line);
+    margin: 16px 0 14px;
+    padding-top: 14px;
+  }
+  .section-divider label.title {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    font-weight: 600;
+    margin-bottom: 8px;
+    display: block;
+  }
+  input[type="text"] {
+    width: 100%;
+    background: #0A0E0C;
+    border: 1px solid var(--line-strong);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 8px 10px;
+    border-radius: 4px;
+    margin-bottom: 8px;
+  }
+  .btn-row { display: flex; gap: 6px; }
+  .small-btn {
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    padding: 8px 6px;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .small-btn:hover { border-color: var(--green); color: var(--green); }
+  .small-btn.primary { background: var(--green); color: #072316; border-color: var(--green); font-weight: 600; }
+  .small-btn.primary:hover { background: #6BE8A6; color: #072316; }
+  #markerPreviewWrap {
+    text-align: center;
+    margin: 10px 0;
+    display: none;
+  }
+  #markerPreviewWrap.show { display: block; }
+  #markerPreview {
+    width: 100%;
+    max-width: 160px;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+  }
+  #qrHost { position: absolute; left: -9999px; top: -9999px; }
+  .hint {
+    font-size: 10.5px;
+    color: var(--text-faint);
+    margin-top: 6px;
+    line-height: 1.5;
+  }
+
+  #status {
+    position: fixed;
+    left: 16px; bottom: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 8px 14px;
+    border-radius: 4px;
+    background: rgba(20, 27, 23, 0.92);
+    border: 1px solid var(--line-strong);
+    z-index: 999;
+  }
+  #status.found { color: var(--green); border-color: var(--green); }
+  #status.lost { color: var(--text-faint); }
+
+  #camPrompt {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0A0E0C;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    text-align: center;
+    padding: 24px;
+    z-index: 1000;
+  }
+  #camPrompt.hidden { display: none; }
+  #camPrompt .box { max-width: 320px; }
+  #camPrompt button {
+    margin-top: 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 10px 20px;
+    background: var(--green);
+    color: #072316;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<div id="camPrompt">
+  <div class="box">
+    <p>markerAR needs camera access to track the printed marker.</p>
+    <button id="camStartBtn">Enable camera</button>
+  </div>
+</div>
+
+<div id="panel">
+  <h1>marker<span>AR</span></h1>
+  <p class="sub">Upload a .glb model, print the marker below, then point your camera at it.</p>
+
+  <div class="field">
+    <label>Model file</label>
+    <label class="file-btn" for="fileInput">Choose a .glb file</label>
+    <input type="file" id="fileInput" accept=".glb,.gltf">
+    <div id="fileName">No file selected — showing default cube</div>
+  </div>
+
+  <div class="field">
+    <label>Scale</label>
+    <input type="range" id="scaleRange" min="0.001" max="0.5" step="0.001" value="0.05">
+    <div class="range-row"><span>small</span><span id="scaleVal">0.050</span><span>large</span></div>
+  </div>
+
+  <div class="field toggle-row">
+    <input type="checkbox" id="spinToggle" checked>
+    <label for="spinToggle" style="margin:0;">Idle rotation</label>
+  </div>
+
+  <div class="field">
+    <a id="printLink" href="https://raw.githubusercontent.com/AR-js-org/AR.js/master/data/images/hiro.png" target="_blank" rel="noopener">Open marker image to print</a>
+  </div>
+
+  <div class="section-divider">
+    <label class="title">Custom QR marker</label>
+    <input type="text" id="qrText" value="https://github.com/YOUR-USERNAME/marker-ar-viewer" placeholder="Text or URL to encode">
+    <div class="btn-row">
+      <button class="small-btn" id="genQrBtn">Generate QR marker</button>
+    </div>
+    <div id="markerPreviewWrap">
+      <canvas id="markerPreview" width="512" height="512"></canvas>
+      <div class="btn-row" style="margin-top:8px;">
+        <button class="small-btn" id="downloadMarkerBtn">Download image</button>
+        <button class="small-btn primary" id="trackMarkerBtn">Track this marker</button>
+      </div>
+    </div>
+    <div class="btn-row" style="margin-top:6px;">
+      <button class="small-btn" id="useHiroBtn">Use Hiro marker</button>
+    </div>
+    <p class="hint">
+      Custom-pattern tracking is trained in your browser and works well for
+      most prints. For best accuracy, you can instead run the downloaded
+      image through AR.js's
+      <a href="https://ar-js-org.github.io/AR.js/three.js/examples/marker-training/examples/generator.html" target="_blank" rel="noopener" style="color:var(--green);">official marker trainer</a>
+      and upload the resulting .patt file below.
+    </p>
+    <label class="file-btn" for="pattInput" style="margin-top:4px;">Upload a trained .patt file</label>
+    <input type="file" id="pattInput" accept=".patt">
+  </div>
+</div>
+
+<div id="qrHost"></div>
+
+<div id="status" class="lost">No marker detected</div>
+
+<a-scene
+  id="scene"
+  embedded
+  vr-mode-ui="enabled: false"
+  renderer="logarithmicDepthBuffer: true;"
+  arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix;">
+
+  <a-assets></a-assets>
+
+  <a-marker id="marker" preset="hiro" emitevents="true">
+    <a-entity id="modelSlot" position="0 0 0" rotation="-90 0 0" scale="0.05 0.05 0.05">
+      <a-box id="defaultBox" position="0 0.5 0" color="#4FE08F" depth="1" height="1" width="1"></a-box>
+    </a-entity>
+  </a-marker>
+
+  <a-entity camera></a-entity>
+</a-scene>
+
+<script>
+  var statusEl = document.getElementById('status');
+  var markerEl = document.getElementById('marker');
+  var modelSlot = document.getElementById('modelSlot');
+  var defaultBox = document.getElementById('defaultBox');
+  var fileInput = document.getElementById('fileInput');
+  var fileNameEl = document.getElementById('fileName');
+  var scaleRange = document.getElementById('scaleRange');
+  var scaleVal = document.getElementById('scaleVal');
+  var spinToggle = document.getElementById('spinToggle');
+  var camPrompt = document.getElementById('camPrompt');
+  var camStartBtn = document.getElementById('camStartBtn');
+
+  markerEl.addEventListener('markerFound', function () {
+    statusEl.textContent = 'Marker found';
+    statusEl.className = 'found';
+  });
+  markerEl.addEventListener('markerLost', function () {
+    statusEl.textContent = 'No marker detected';
+    statusEl.className = 'lost';
+  });
+
+  function bindMarkerEvents() {
+    markerEl.addEventListener('markerFound', function () {
+      statusEl.textContent = 'Marker found';
+      statusEl.className = 'found';
+    });
+    markerEl.addEventListener('markerLost', function () {
+      statusEl.textContent = 'No marker detected';
+      statusEl.className = 'lost';
+    });
+  }
+
+  function replaceMarker(attrs) {
+    var newMarker = document.createElement('a-marker');
+    newMarker.setAttribute('id', 'marker');
+    newMarker.setAttribute('emitevents', 'true');
+    Object.keys(attrs).forEach(function (k) {
+      newMarker.setAttribute(k, attrs[k]);
+    });
+    newMarker.appendChild(modelSlot);
+    markerEl.parentNode.replaceChild(newMarker, markerEl);
+    markerEl = newMarker;
+    bindMarkerEvents();
+    statusEl.textContent = 'No marker detected';
+    statusEl.className = 'lost';
+  }
+
+  function applyScale(v) {
+    modelSlot.setAttribute('scale', v + ' ' + v + ' ' + v);
+    scaleVal.textContent = parseFloat(v).toFixed(3);
+  }
+  scaleRange.addEventListener('input', function (e) {
+    applyScale(e.target.value);
+  });
+
+  function applySpin(on) {
+    if (on) {
+      modelSlot.setAttribute('animation', {
+        property: 'rotation',
+        to: '-90 360 0',
+        loop: true,
+        dur: 6000,
+        easing: 'linear'
+      });
+    } else {
+      modelSlot.removeAttribute('animation');
+      modelSlot.setAttribute('rotation', '-90 0 0');
+    }
+  }
+  spinToggle.addEventListener('change', function (e) {
+    applySpin(e.target.checked);
+  });
+  applySpin(true);
+
+  fileInput.addEventListener('change', function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+
+    fileNameEl.textContent = file.name;
+    var url = URL.createObjectURL(file);
+
+    if (defaultBox) {
+      defaultBox.parentNode.removeChild(defaultBox);
+      defaultBox = null;
+    }
+
+    var existing = document.getElementById('gltfEntity');
+    if (existing) existing.parentNode.removeChild(existing);
+
+    var gltfEntity = document.createElement('a-entity');
+    gltfEntity.setAttribute('id', 'gltfEntity');
+    gltfEntity.setAttribute('gltf-model', url);
+    gltfEntity.setAttribute('position', '0 0 0');
+    modelSlot.appendChild(gltfEntity);
+
+    applySpin(spinToggle.checked);
+  });
+
+  camStartBtn.addEventListener('click', function () {
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(function (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        camPrompt.classList.add('hidden');
+      })
+      .catch(function (err) {
+        camPrompt.querySelector('.box').innerHTML =
+          '<p>Camera access was blocked. Check your browser\'s site permissions and reload the page.</p>';
+      });
+  });
+
+  /* ---------- Custom QR marker: generate, download, train, track ---------- */
+
+  var qrText = document.getElementById('qrText');
+  var genQrBtn = document.getElementById('genQrBtn');
+  var qrHost = document.getElementById('qrHost');
+  var markerPreviewWrap = document.getElementById('markerPreviewWrap');
+  var markerPreview = document.getElementById('markerPreview');
+  var downloadMarkerBtn = document.getElementById('downloadMarkerBtn');
+  var trackMarkerBtn = document.getElementById('trackMarkerBtn');
+  var useHiroBtn = document.getElementById('useHiroBtn');
+  var pattInput = document.getElementById('pattInput');
+
+  var MARKER_SIZE = 512;
+  var BORDER = MARKER_SIZE * 0.25; // outer black border -> inner 50% is the trainable image
+  var INNER = MARKER_SIZE - BORDER * 2;
+  var innerCanvas = document.createElement('canvas');
+  innerCanvas.width = INNER;
+  innerCanvas.height = INNER;
+
+  function generateQrMarker() {
+    qrHost.innerHTML = '';
+    /* eslint-disable no-new */
+    new QRCode(qrHost, {
+      text: qrText.value || 'markerAR',
+      width: INNER,
+      height: INNER,
+      correctLevel: QRCode.CorrectLevel.H
+    });
+
+    // qrcode.js renders asynchronously into a <canvas> or <img>; wait a tick
+    setTimeout(function () {
+      var qrCanvas = qrHost.querySelector('canvas');
+      var innerCtx = innerCanvas.getContext('2d');
+      innerCtx.fillStyle = '#FFFFFF';
+      innerCtx.fillRect(0, 0, INNER, INNER);
+      if (qrCanvas) {
+        innerCtx.drawImage(qrCanvas, 0, 0, INNER, INNER);
+      } else {
+        var qrImg = qrHost.querySelector('img');
+        innerCtx.drawImage(qrImg, 0, 0, INNER, INNER);
+      }
+
+      var ctx = markerPreview.getContext('2d');
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, MARKER_SIZE, MARKER_SIZE);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(BORDER * 0.4, BORDER * 0.4, MARKER_SIZE - BORDER * 0.8, MARKER_SIZE - BORDER * 0.8);
+      ctx.drawImage(innerCanvas, BORDER, BORDER, INNER, INNER);
+
+      markerPreviewWrap.classList.add('show');
+    }, 50);
+  }
+  genQrBtn.addEventListener('click', generateQrMarker);
+
+  downloadMarkerBtn.addEventListener('click', function () {
+    var link = document.createElement('a');
+    link.download = 'qr-marker.png';
+    link.href = markerPreview.toDataURL('image/png');
+    link.click();
+  });
+
+  function sampleGrid(canvas, gridSize) {
+    var ctx = canvas.getContext('2d');
+    var w = canvas.width, h = canvas.height;
+    var cellW = w / gridSize, cellH = h / gridSize;
+    var grid = [];
+    for (var row = 0; row < gridSize; row++) {
+      var rowArr = [];
+      for (var col = 0; col < gridSize; col++) {
+        var x = Math.floor(col * cellW), y = Math.floor(row * cellH);
+        var cw = Math.max(1, Math.round(cellW)), ch = Math.max(1, Math.round(cellH));
+        var data = ctx.getImageData(x, y, cw, ch).data;
+        var rSum = 0, gSum = 0, bSum = 0, n = 0;
+        for (var i = 0; i < data.length; i += 4) {
+          rSum += data[i]; gSum += data[i + 1]; bSum += data[i + 2]; n++;
+        }
+        rowArr.push([Math.round(rSum / n), Math.round(gSum / n), Math.round(bSum / n)]);
+      }
+      grid.push(rowArr);
+    }
+    return grid;
+  }
+
+  function rotateGrid90(grid) {
+    var n = grid.length;
+    var result = [];
+    for (var i = 0; i < n; i++) {
+      var row = [];
+      for (var j = 0; j < n; j++) {
+        row.push(grid[n - 1 - j][i]);
+      }
+      result.push(row);
+    }
+    return result;
+  }
+
+  function gridToPatt(grid0) {
+    var grid90 = rotateGrid90(grid0);
+    var grid180 = rotateGrid90(grid90);
+    var grid270 = rotateGrid90(grid180);
+    var rotations = [grid0, grid90, grid180, grid270];
+    var lines = [];
+    rotations.forEach(function (grid) {
+      for (var ch = 0; ch < 3; ch++) {
+        grid.forEach(function (row) {
+          lines.push(row.map(function (cell) { return cell[ch]; }).join(' '));
+        });
+      }
+    });
+    return lines.join('\n') + '\n';
+  }
+
+  trackMarkerBtn.addEventListener('click', function () {
+    var grid = sampleGrid(innerCanvas, 16);
+    var pattText = gridToPatt(grid);
+    var blob = new Blob([pattText], { type: 'text/plain' });
+    var url = URL.createObjectURL(blob);
+    replaceMarker({ type: 'pattern', url: url, size: '1' });
+  });
+
+  pattInput.addEventListener('change', function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var url = URL.createObjectURL(file);
+    replaceMarker({ type: 'pattern', url: url, size: '1' });
+  });
+
+  useHiroBtn.addEventListener('click', function () {
+    replaceMarker({ preset: 'hiro' });
+  });
+
+</script>
+
+</body>
+</html>
