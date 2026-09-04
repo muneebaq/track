@@ -264,14 +264,14 @@
   </div>
 
   <div class="field">
-    <a id="printLink" href="https://raw.githubusercontent.com/AR-js-org/AR.js/master/data/images/hiro.png" target="_blank" rel="noopener">Open marker image to print</a>
+    <a id="printLink" href="#markerPreview">Download QR marker to print</a>
   </div>
 
   <div class="section-divider">
-    <label class="title">Custom QR marker</label>
+    <label class="title">QR marker</label>
     <input type="text" id="qrText" value="https://github.com/YOUR-USERNAME/marker-ar-viewer" placeholder="Text or URL to encode">
     <div class="btn-row">
-      <button class="small-btn" id="genQrBtn">Generate QR marker</button>
+      <button class="small-btn" id="genQrBtn">Regenerate QR marker</button>
     </div>
     <div id="markerPreviewWrap">
       <canvas id="markerPreview" width="512" height="512"></canvas>
@@ -281,7 +281,7 @@
       </div>
     </div>
     <div class="btn-row" style="margin-top:6px;">
-      <button class="small-btn" id="useHiroBtn">Use Hiro marker</button>
+      <button class="small-btn" id="useHiroBtn">Use Hiro fallback</button>
     </div>
     <p class="hint">
       Custom-pattern tracking is trained in your browser and works well for
@@ -479,6 +479,7 @@
   var qrHost = document.getElementById('qrHost');
   var markerPreviewWrap = document.getElementById('markerPreviewWrap');
   var markerPreview = document.getElementById('markerPreview');
+  var printLink = document.getElementById('printLink');
   var downloadMarkerBtn = document.getElementById('downloadMarkerBtn');
   var trackMarkerBtn = document.getElementById('trackMarkerBtn');
   var useHiroBtn = document.getElementById('useHiroBtn');
@@ -491,7 +492,15 @@
   innerCanvas.width = INNER;
   innerCanvas.height = INNER;
 
-  function generateQrMarker() {
+  function trackQrMarker() {
+    var grid = sampleGrid(innerCanvas, 16);
+    var pattText = gridToPatt(grid);
+    var blob = new Blob([pattText], { type: 'text/plain' });
+    var url = URL.createObjectURL(blob);
+    replaceMarker({ type: 'pattern', url: url, size: '1' });
+  }
+
+  function generateQrMarker(trackWhenReady) {
     qrHost.innerHTML = '';
     /* eslint-disable no-new */
     new QRCode(qrHost, {
@@ -521,10 +530,15 @@
       ctx.fillRect(BORDER * 0.4, BORDER * 0.4, MARKER_SIZE - BORDER * 0.8, MARKER_SIZE - BORDER * 0.8);
       ctx.drawImage(innerCanvas, BORDER, BORDER, INNER, INNER);
 
+      printLink.href = markerPreview.toDataURL('image/png');
+      printLink.download = 'qr-marker.png';
       markerPreviewWrap.classList.add('show');
+      if (trackWhenReady) trackQrMarker();
     }, 50);
   }
-  genQrBtn.addEventListener('click', generateQrMarker);
+  genQrBtn.addEventListener('click', function () {
+    generateQrMarker(false);
+  });
 
   downloadMarkerBtn.addEventListener('click', function () {
     var link = document.createElement('a');
@@ -585,11 +599,7 @@
   }
 
   trackMarkerBtn.addEventListener('click', function () {
-    var grid = sampleGrid(innerCanvas, 16);
-    var pattText = gridToPatt(grid);
-    var blob = new Blob([pattText], { type: 'text/plain' });
-    var url = URL.createObjectURL(blob);
-    replaceMarker({ type: 'pattern', url: url, size: '1' });
+    trackQrMarker();
   });
 
   pattInput.addEventListener('change', function (e) {
@@ -601,6 +611,10 @@
 
   useHiroBtn.addEventListener('click', function () {
     replaceMarker({ preset: 'hiro' });
+  });
+
+  document.getElementById('scene').addEventListener('loaded', function () {
+    generateQrMarker(true);
   });
 
 </script>
